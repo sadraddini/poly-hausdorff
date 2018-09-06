@@ -35,6 +35,8 @@ def directed_distance_polytope_to_polytope(p1,p2,norm,ball_approximation):
     Lambda_ball=np.empty((p_ball.H.shape[0],p2.H.shape[0]),dtype='object')
     T_main=np.empty((n,n),dtype='object')
     T_ball=np.empty((n,n),dtype='object')
+    d_main=np.empty((n,1),dtype='object')
+    d_ball=np.empty((n,1),dtype='object')
     epsilon=model.addVar(lb=-10,obj=1,ub=10)
     for row in range(p1.H.shape[0]):
         for column in range(p2.H.shape[0]):
@@ -45,15 +47,18 @@ def directed_distance_polytope_to_polytope(p1,p2,norm,ball_approximation):
     for row in range(n):
         for column in range(n):
             T_main[row,column]=model.addVar(lb=-GRB.INFINITY,ub=GRB.INFINITY)
-            T_ball[row,column]=model.addVar(lb=-GRB.INFINITY,ub=GRB.INFINITY)        
+            T_ball[row,column]=model.addVar(lb=-GRB.INFINITY,ub=GRB.INFINITY) 
+        d_main[row,0]=model.addVar(lb=-GRB.INFINITY,ub=GRB.INFINITY) 
+        d_ball[row,0]=model.addVar(lb=-GRB.INFINITY,ub=GRB.INFINITY) 
     model.update()
     constraints_AB_eq_CD(model,Lambda_main,p2.H,p1.H,T_main)
     constraints_AB_eq_CD(model,Lambda_ball,p2.H,p_ball.H,T_ball)
-    constraints_AB_smaller_c(model,Lambda_main,p2.h,p1.h,1)
-    constraints_AB_smaller_c(model,Lambda_ball,p2.h,p_ball.h,epsilon)
+    constraints_AB_smaller_c_H_d(model,Lambda_main,p2.h,p1.h,1,p2.H,d_main)
+    constraints_AB_smaller_c_H_d(model,Lambda_ball,p2.h,p_ball.h,epsilon,p_ball.H,d_ball)
     for row in range(n):
         for column in range(n):
             model.addConstr(T_main[row,column]+T_ball[row,column]==int(row==column))
+        model.addConstr(d_ball[row,0]+d_main[row,0]==0)
     model.optimize()  
     return epsilon.X
 
@@ -73,4 +78,15 @@ def constraints_AB_smaller_c(model,A,b,c,epsilon):
         lhs=LinExpr()
         for k in range(A.shape[1]):
             lhs.add(A[row,k]*b[k,0])
-            model.addConstr(lhs<=c[row,0]*epsilon)  
+            model.addConstr(lhs<=c[row,0]*epsilon) 
+            
+def constraints_AB_smaller_c_H_d(model,A,b,c,epsilon,H,d):
+    # A*b <= c*epsilon - H*d
+    for row in range(A.shape[0]):
+        lhs=LinExpr()
+        Hd=LinExpr()
+        for k in range(A.shape[1]):
+            lhs.add(A[row,k]*b[k,0])
+        for k in range(H.shape[1]):
+            Hd.add(H[row,k]*d[k,0])
+        model.addConstr(lhs<=c[row,0]*epsilon-Hd)  
